@@ -182,20 +182,81 @@ jobs:
       if: env.ENABLE_KERNELSU == 'true'
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        # Tambahkan flag 'legacy' di sini!
-        curl -LSs "$KERNELSU_SETUP_SOURCE" | bash -s ${{ env.KERNELSU_TAG }} legacy
-        KSU_VERSION="_$(cd KernelSU-Next && expr $(git rev-list --count HEAD) + 10200)"
-        echo "UPLOADNAME=-KSU-Next$KSU_VERSION" >> $GITHUB_ENV
+        curl -LSs "$KERNELSU_SETUP_SOURCE" | bash -s ${{ env.KERNELSU_TAG }}
+        KSU_VERSION="_$(cd $(echo "$KERNELSU_SETUP_SOURCE" | cut -d/ -f5) || cd KernelSU && expr $(git rev-list --count HEAD) + 10200)"
+        echo "UPLOADNAME=-$(echo "$KERNELSU_SETUP_SOURCE" | cut -d/ -f5)$KSU_VERSION" >> $GITHUB_ENV
+        if [ ${{ env.KSU_REVERT }} = true ]; then
+            git apply $GITHUB_WORKSPACE/patches/KSU_REVERT.patch
+        fi
 
     - name: Setup Configuration for kernel
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        # Tambahkan baris ini untuk Manual Patch Otomatis (Tanpa file .patch)
-        if [ ${{ env.ENABLE_KERNELSU }} = true -a ${{ env.KSU_HOOKS_PATCH }} = true ]; then
-            echo "[+] Applying Manual Hooks for 4.14..."
-            sed -i '/static int do_execveat_common/i #ifdef CONFIG_KSU\nextern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n#endif' fs/exec.c
-            sed -i '/struct user_arg_ptr envp = { .ptr.native = __envp };/a #ifdef CONFIG_KSU\n\tksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);\n#endif' fs/exec.c
-            echo "CONFIG_KSU=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        if [ ${{ env.ENABLE_KERNELSU }} = true ]; then
+            if [ ${{ env.KSU_HOOKS_PATCH }} = true ]; then
+                git apply $GITHUB_WORKSPACE/patches/KSU_HOOKS_PATCH.patch
+                if grep -q "CONFIG_KSU" arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig; then
+                    sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                    sed -i 's/CONFIG_KSU=n/CONFIG_KSU=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                else
+                    echo "CONFIG_KSU=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                fi
+            fi
+            if [ ${{ env.ADD_KPROBES_CONFIG }} = true -a ${{ env.KSU_HOOKS_PATCH }} != true ]; then
+                echo "CONFIG_MODULES=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                echo "CONFIG_KPROBES=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                echo "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                echo "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            fi
+        fi
+        if [ ${{ env.ADD_OVERLAYFS_CONFIG }} = true ]; then
+            echo "CONFIG_OVERLAY_FS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            echo "CONFIG_OVERLAY_FS_REDIRECT_DIR=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            echo "CONFIG_OVERLAY_FS_INDEX=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        fi
+        if [ ${{ env.ADD_APATCH_SUPPORT }} = true ]; then
+                sed -i 's/# CONFIG_DEBUG_KERNEL is not set/CONFIG_DEBUG_KERNEL=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/CONFIG_DEBUG_KERNEL=n/CONFIG_DEBUG_KERNEL=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                echo "CONFIG_DEBUG_KERNEL=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/# CONFIG_KALLSYMS is not set/CONFIG_KALLSYMS=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/CONFIG_KALLSYMS=n/CONFIG_KALLSYMS=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                echo "CONFIG_KALLSYMS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/CONFIG_KALLSYMS_ALL=n/CONFIG_KALLSYMS_ALL=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                echo "CONFIG_KALLSYMS_ALL=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/# CONFIG_KALLSYMS_BASE_RELATIVE is not set/CONFIG_KALLSYMS_BASE_RELATIVE=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/CONFIG_KALLSYMS_BASE_RELATIVE=n/CONFIG_KALLSYMS_BASE_RELATIVE=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                echo "CONFIG_KALLSYMS_BASE_RELATIVE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                if [ ${{ env.FIX_APATCH_OPENELA }} = true ]; then
+                    git apply $GITHUB_WORKSPACE/patches/FIX_APATCH_OPENELA.patch || {
+                    git apply $GITHUB_WORKSPACE/patches/REVERT_ADD_GET_CRED_RCU.patch
+                    git apply $GITHUB_WORKSPACE/patches/FIX_APATCH_OPENELA.patch
+                    }
+                fi
+        fi
+        if [ ${{ env.DISABLE_LTO }} = true ]; then
+            sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            echo "CONFIG_LTO_NONE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        fi
+        if [ ${{ env.DISABLE_CC_WERROR }} = true ]; then
+            echo "CONFIG_CC_WERROR=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        fi
+        if [ ${{ env.OLD_ANDROID_SUPPORT }} = true ]; then
+            git apply $GITHUB_WORKSPACE/patches/OLD_ANDROID_SUPPORT.patch
+            if grep -q "CONFIG_MMC_CRYPTO_LEGACY" arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig; then
+                sed -i 's/# CONFIG_MMC_CRYPTO_LEGACY is not set/CONFIG_MMC_CRYPTO_LEGACY=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+                sed -i 's/CONFIG_MMC_CRYPTO_LEGACY=n/CONFIG_MMC_CRYPTO_LEGACY=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            else
+                echo "CONFIG_MMC_CRYPTO_LEGACY=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+            fi
+        fi
+        if [ ${{ env.FIX_WIFI_SPEED }} = true ]; then
+            rm -rf drivers/misc/mediatek/connectivity
+            cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel/drivers/misc/mediatek
+            git clone https://github.com/Jbub5/connectivity.git --depth=1
+            cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         fi
 
     - name: Setup ccache
