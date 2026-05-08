@@ -193,25 +193,34 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         
-        # Tambahkan konfigurasi ke defconfig
-        # 1. Extreme Performance
+        # 1. Extreme Performance & Scheduler
         echo "CONFIG_CPU_FREQ_GOV_PERFORMANCE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_HZ_1000=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_SCHED_AUTOGROUP=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
-        # 2. Aggressive RAM Management
+        # 2. Aggressive RAM Management & ZRAM
         echo "CONFIG_ZRAM=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_ZRAM_LZ4_COMPRESS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_SWAP=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_ANDROID_LOW_MEMORY_KILLER=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
-        # 3. Disable Thermal (No Limits)
-        sed -i 's/CONFIG_THERMAL=y/CONFIG_THERMAL=n/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        # 3. Disable Thermal Throttling (Fix GPU Undefined Symbol)
+        # Kita biarkan CONFIG_THERMAL=y agar GPU tidak error, tapi kita matikan driver MTK-nya
+        echo "CONFIG_THERMAL=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_THERMAL_GOV_USER_SPACE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_THERMAL_GOV_POWER_ALLOCATOR=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_THERMAL_GOV_STEP_WISE=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_MTK_THERMAL=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_MTK_THERMAL_PA_V2=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
         # 4. Remove Debugging Overhead
         echo "CONFIG_DEBUG_PREEMPT=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "# CONFIG_SLUB_DEBUG is not set" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_PROFILING=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        sed -i 's/CONFIG_SLUB_DEBUG=y/CONFIG_SLUB_DEBUG=n/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
 
-        if [ ${{ env.ENABLE_KERNELSU }} = true ]; then
-            if [ ${{ env.KSU_HOOKS_PATCH }} = true ]; then
+        # --- Bawaan Original Script ---
+        if [ "${{ env.ENABLE_KERNELSU }}" = "true" ]; then
+            if [ "${{ env.KSU_HOOKS_PATCH }}" = "true" ]; then
                 git apply $GITHUB_WORKSPACE/patches/KSU_HOOKS_PATCH.patch
                 if grep -q "CONFIG_KSU" arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig; then
                     sed -i 's/# CONFIG_KSU is not set/CONFIG_KSU=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
@@ -220,19 +229,19 @@ jobs:
                     echo "CONFIG_KSU=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 fi
             fi
-            if [ ${{ env.ADD_KPROBES_CONFIG }} = true -a ${{ env.KSU_HOOKS_PATCH }} != true ]; then
+            if [ "${{ env.ADD_KPROBES_CONFIG }}" = "true" ] && [ "${{ env.KSU_HOOKS_PATCH }}" != "true" ]; then
                 echo "CONFIG_MODULES=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 echo "CONFIG_KPROBES=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 echo "CONFIG_HAVE_KPROBES=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 echo "CONFIG_KPROBE_EVENTS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             fi
         fi
-        if [ ${{ env.ADD_OVERLAYFS_CONFIG }} = true ]; then
+        if [ "${{ env.ADD_OVERLAYFS_CONFIG }}" = "true" ]; then
             echo "CONFIG_OVERLAY_FS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             echo "CONFIG_OVERLAY_FS_REDIRECT_DIR=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             echo "CONFIG_OVERLAY_FS_INDEX=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         fi
-        if [ ${{ env.ADD_APATCH_SUPPORT }} = true ]; then
+        if [ "${{ env.ADD_APATCH_SUPPORT }}" = "true" ]; then
                 sed -i 's/# CONFIG_DEBUG_KERNEL is not set/CONFIG_DEBUG_KERNEL=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 sed -i 's/CONFIG_DEBUG_KERNEL=n/CONFIG_DEBUG_KERNEL=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 echo "CONFIG_DEBUG_KERNEL=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
@@ -245,23 +254,23 @@ jobs:
                 sed -i 's/# CONFIG_KALLSYMS_BASE_RELATIVE is not set/CONFIG_KALLSYMS_BASE_RELATIVE=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 sed -i 's/CONFIG_KALLSYMS_BASE_RELATIVE=n/CONFIG_KALLSYMS_BASE_RELATIVE=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
                 echo "CONFIG_KALLSYMS_BASE_RELATIVE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-                if [ ${{ env.FIX_APATCH_OPENELA }} = true ]; then
+                if [ "${{ env.FIX_APATCH_OPENELA }}" = "true" ]; then
                     git apply $GITHUB_WORKSPACE/patches/FIX_APATCH_OPENELA.patch || {
                     git apply $GITHUB_WORKSPACE/patches/REVERT_ADD_GET_CRED_RCU.patch
                     git apply $GITHUB_WORKSPACE/patches/FIX_APATCH_OPENELA.patch
                     }
                 fi
         fi
-        if [ ${{ env.DISABLE_LTO }} = true ]; then
+        if [ "${{ env.DISABLE_LTO }}" = "true" ]; then
             sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             echo "CONFIG_LTO_NONE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         fi
-        if [ ${{ env.DISABLE_CC_WERROR }} = true ]; then
+        if [ "${{ env.DISABLE_CC_WERROR }}" = "true" ]; then
             echo "CONFIG_CC_WERROR=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         fi
-        if [ ${{ env.OLD_ANDROID_SUPPORT }} = true ]; then
+        if [ "${{ env.OLD_ANDROID_SUPPORT }}" = "true" ]; then
             git apply $GITHUB_WORKSPACE/patches/OLD_ANDROID_SUPPORT.patch
             if grep -q "CONFIG_MMC_CRYPTO_LEGACY" arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig; then
                 sed -i 's/# CONFIG_MMC_CRYPTO_LEGACY is not set/CONFIG_MMC_CRYPTO_LEGACY=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
@@ -270,7 +279,7 @@ jobs:
                 echo "CONFIG_MMC_CRYPTO_LEGACY=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
             fi
         fi
-        if [ ${{ env.FIX_WIFI_SPEED }} = true ]; then
+        if [ "${{ env.FIX_WIFI_SPEED }}" = "true" ]; then
             rm -rf drivers/misc/mediatek/connectivity
             cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel/drivers/misc/mediatek
             git clone https://github.com/Jbub5/connectivity.git --depth=1
