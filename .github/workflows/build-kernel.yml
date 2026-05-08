@@ -193,32 +193,34 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
         
-        # 1. Extreme Performance & Scheduler
+        # --- 1. Extreme Performance & Scheduler ---
         echo "CONFIG_CPU_FREQ_GOV_PERFORMANCE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_HZ_1000=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_SCHED_AUTOGROUP=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
-        # 2. Aggressive RAM Management & ZRAM
+        # --- 2. Aggressive RAM Management ---
         echo "CONFIG_ZRAM=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_ZRAM_LZ4_COMPRESS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_SWAP=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_ANDROID_LOW_MEMORY_KILLER=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
-        # 3. Disable Thermal Throttling (Fix GPU Undefined Symbol)
-        # Kita biarkan CONFIG_THERMAL=y agar GPU tidak error, tapi kita matikan driver MTK-nya
+        # --- 3. Fix Connectivity Undefined Symbols ---
+        # Aktifkan driver WCN (Wireless Connectivity) yang dibutuhkan
+        echo "CONFIG_MTK_COMBO=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_MTK_COMBO_BT=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_MTK_COMBO_GPS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_MTK_STP_UART_OBJ=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        
+        # --- 4. Thermal Throttling (Extreme Mode) ---
+        # Kita biarkan thermal subsistem hidup (agar GPU/WCN tidak error), 
+        # tapi kita matikan kontrol suhunya
         echo "CONFIG_THERMAL=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_THERMAL_GOV_USER_SPACE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_THERMAL_GOV_POWER_ALLOCATOR=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_THERMAL_GOV_STEP_WISE=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_MTK_THERMAL=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_MTK_THERMAL_PA_V2=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
-        # 4. Remove Debugging Overhead
-        echo "CONFIG_DEBUG_PREEMPT=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_PROFILING=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        # --- 5. Remove Debugging (Speed optimization) ---
         sed -i 's/CONFIG_SLUB_DEBUG=y/CONFIG_SLUB_DEBUG=n/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_DEBUG_PREEMPT=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
 
-        # --- Bawaan Original Script ---
+        # --- Integrasi KernelSU/APatch (Original) ---
         if [ "${{ env.ENABLE_KERNELSU }}" = "true" ]; then
             if [ "${{ env.KSU_HOOKS_PATCH }}" = "true" ]; then
                 git apply $GITHUB_WORKSPACE/patches/KSU_HOOKS_PATCH.patch
