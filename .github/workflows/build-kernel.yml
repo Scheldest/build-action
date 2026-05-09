@@ -202,24 +202,24 @@ jobs:
         echo "CONFIG_ZRAM_LZ4_COMPRESS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_SWAP=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
-        # --- 3. Fix Connectivity Undefined Symbols ---
-        # Aktifkan driver WCN (Wireless Connectivity) yang dibutuhkan
+        # --- 3. Fix Stack Protector Conflict (PENTING) ---
+        # Matikan Stack Protector di config agar sesuai dengan KCFLAGS -fno-stack-protector
+        sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/CONFIG_CC_STACKPROTECTOR_NONE=y/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
+        
+        # --- 4. Fix Connectivity & Thermal (Extreme Mode) ---
         echo "CONFIG_MTK_COMBO=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_MTK_COMBO_BT=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_MTK_COMBO_GPS=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_MTK_STP_UART_OBJ=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        
-        # --- 4. Thermal Throttling (Extreme Mode) ---
-        # Kita biarkan thermal subsistem hidup (agar GPU/WCN tidak error), 
-        # tapi kita matikan kontrol suhunya
         echo "CONFIG_THERMAL=y" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_MTK_THERMAL=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
-        echo "CONFIG_MTK_THERMAL_PA_V2=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         
-        # --- 5. Remove Debugging (Speed optimization) ---
+        # --- 5. Remove Debugging Overhead ---
         sed -i 's/CONFIG_SLUB_DEBUG=y/CONFIG_SLUB_DEBUG=n/g' arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
         echo "CONFIG_DEBUG_PREEMPT=n" >> arch/${{ env.KERNEL_ARCH }}/configs/${DEVICE}_defconfig
 
+        # (Lanjutkan dengan kode KSU/APatch asli kamu di bawah ini)
+        
         # --- Integrasi KernelSU/APatch (Original) ---
         if [ "${{ env.ENABLE_KERNELSU }}" = "true" ]; then
             if [ "${{ env.KSU_HOOKS_PATCH }}" = "true" ]; then
